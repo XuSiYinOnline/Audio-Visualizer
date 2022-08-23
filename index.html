@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-Cn">
+    <head>
+        <meta charset="UTF-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">	
+        <link href='css/style.css' rel='stylesheet' type='text/css'>
+		<title>X.Audio.Visualizer</title>
+    <body>
+        <div class="wrp">
+			<canvas id="canvas"></canvas>
+            <audio class="adv">
+                <source src="music/Ethereal.mp3" type="audio/mpeg">
+            </audio>
+        </div>
+        <script type="text/javascript" src="scripts/jquery-1.8.2.min.js"></script>
+        <script type="text/javascript" src="scripts/dev.min.js"></script>
+		<script src="scripts/dev.js"></script>
+        <script>
+        $('.adv').advAudio({
+            color:'#c05'
+        });
+        </script>
+        <script>
+            $('.purple').bind("click",function(){
+                $('.adv_wrp').css('background','#c05');
+            });
+            $('.red').bind("click",function(){
+                $('.adv_wrp').css('background','#e93449');
+            });
+            $('.blue').bind("click",function(){
+                $('.adv_wrp').css('background','#4ebdec');
+            });
+            $('.violett').bind("click",function(){
+                $('.adv_wrp').css('background','#a359d1');
+            });
+            $('.green').bind("click",function(){
+                $('.adv_wrp').css('background','#93cd41');
+            });
+            $('.yellow').bind("click",function(){
+                $('.adv_wrp').css('background','#fc0');
+            });
+            $('.white').bind("click",function(){
+                $('.adv_wrp').css('background','#ececec');
+            });
+            $('.black').bind("click",function(){
+                $('.adv_wrp').css('background','#444');
+            });
+        </script>
+    </body>
+</html>
