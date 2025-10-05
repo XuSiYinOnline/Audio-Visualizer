@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=0"/>
+    <meta name="robots" content="all">
+    <meta name="referrer" content="always">
+    <meta name="renderer" content="webkit">
+    <meta http-equiv="Cache-Control" content="no-transform" />
+    <meta name="format-detection" content="telephone=no"/>
+    <title>.:音频可视化:.</title>
+    <style>
+        body { 
+            margin: 0; 
+            font-family: 'Segoe UI',SegoeUI,'Microsoft YaHei',微软雅黑,"Helvetica Neue",Helvetica,Arial,sans-serif;
+            background-color: #000; 
+            color: #fff; 
+            overflow: hidden; 
+        }
+        
+        #background {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-size: cover;
+            background-position: center;
+            z-index: -1;
+            transition: transform 0.1s ease-out, opacity 0.3s ease;
+        }
+        
+        #controls { 
+            position: absolute; 
+            bottom: 10px; 
+            right: 10px; 
+            z-index: 1000; 
+        }
+        
+        #audioControls { 
+            display: flex; 
+            gap: 10px;
+            border-radius: 50px;
+            padding: 15px;
+        }
+        
+        .control-btn { 
+            width: 40px;
+            height: 40px;
+            background-color: #444; 
+            color: #fff; 
+            border: none; 
+            border-radius: 50%; 
+            cursor: pointer; 
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .control-btn:hover { 
+            background-color: #555; 
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        }
+        
+        .control-btn:disabled {
+            background-color: #222;
+            color: #666;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .control-btn svg {
+            width: 20px;
+            height: 20px;
+            fill: currentColor;
+        }
+        
+        #visualizerInfo { 
+            position: absolute; 
+            bottom: 10px; 
+            left: 10px; 
+            padding: 8px 12px; 
+            border-radius: 5px; 
+            font-size: 11px;
+        }
+        
+        .frequency {
+            color: #0f0;
+            font-weight: bold;
+        }
+        
+        .track-info {
+            margin-top: 5px;
+            font-size: 10px;
+            color: #aaa;
+        }
+        
+
+        #loadingHint {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 16px;
+			font-size: 12px;
+			color: #fff; 
+            //border-radius: 10px;
+            display: none;
+            z-index: 1001;
+        }
+    </style>
+</head>
+<body>
+    <div id="background"></div>
+    <div id="loadingHint">粒子加载中</div>
+    
+    <div id="controls">
+        <div id="audioControls">
+            <button id="startBtn" class="control-btn">
+                <svg viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z"/>
+                </svg>
+            </button>
+            <button id="pauseBtn" class="control-btn" disabled>
+                <svg viewBox="0 0 24 24">
+                    <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                </svg>
+            </button>
+            <button id="stopBtn" class="control-btn" disabled>
+                <svg viewBox="0 0 24 24">
+                    <path d="M6 6h12v12H6z"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+    <div id="visualizerInfo"></div>
+
+    <script src="./scripts/three.min.js"></script>
+    <script>
+        // 全局变量
+        let scene, camera, renderer, points;
+        let audioContext, analyser, audioSource, frequencyData;
+        let isPlaying = false;
+        let audioElement;
+        let intensity = 0.5;
+        let rotationSpeed = 0.5;
+        let particleCount = 10000;
+        let particlesCreated = false; // 标记粒子是否已创建
+        
+        // 音乐图片列表
+        const musicList = [
+            './music/music1.mp3',
+            './music/music2.mp3'
+        ];
+        
+        const backgroundImages = [
+            './images/images1.jpg',
+            './images/images2.jpg'
+        ];
+        
+        let currentTrackIndex = 0;
+
+        // 初始化函数
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 50;
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            // 注释掉初始粒子
+            // createParticles();
+
+            // 设置音频
+            setupAudio();
+
+            // 设置事件监听器
+            setupEventListeners();
+
+            // 设置初始背景
+            setBackgroundImage(currentTrackIndex);
+
+            // 开始动画循环
+            animate();
+        }
+
+        // 设置背景图片
+        function setBackgroundImage(index) {
+            const background = document.getElementById('background');
+            background.style.backgroundImage = `url('${backgroundImages[index]}')`;
+            // 添加淡入效果
+            background.style.opacity = 0;
+            setTimeout(() => {
+                background.style.opacity = 1;
+            }, 10);
+        }
+
+        // 创建粒子
+        function createParticles() {
+            // 显示加载提示
+            document.getElementById('loadingHint').style.display = 'block';
+            
+            // 延迟创建粒子以避免阻塞UI
+            setTimeout(() => {
+                if (points) scene.remove(points);
+
+                const geometry = new THREE.BufferGeometry();
+                const positions = new Float32Array(particleCount * 3);
+                const colorArray = new Float32Array(particleCount * 3);
+                
+                // 初始化粒子位置
+                for (let i = 0; i < positions.length; i += 3) {
+                    positions[i] = (Math.random() - 0.5) * 100;
+                    positions[i + 1] = (Math.random() - 0.5) * 100;
+                    positions[i + 2] = (Math.random() - 0.5) * 100;
+                }
+
+                geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                geometry.setAttribute('color', new THREE.BufferAttribute(colorArray, 3));
+
+                const material = new THREE.PointsMaterial({ 
+                    size: 0.5, 
+                    vertexColors: true,
+                    sizeAttenuation: true,
+                    transparent: true,
+                    opacity: 0.8
+                });
+                
+                points = new THREE.Points(geometry, material);
+                scene.add(points);
+                
+                // 标记粒子已创建
+                particlesCreated = true;
+                
+                // 隐藏加载提示
+                document.getElementById('loadingHint').style.display = 'none';
+            }, 100);
+        }
+
+        // 设置音频
+        function setupAudio() {
+            // 创建音频元素
+            audioElement = new Audio();
+            // 设置第一首音乐
+            audioElement.src = musicList[currentTrackIndex];
+            audioElement.loop = false; // 不循环单首音乐
+            
+            // 添加音乐结束事件监听器
+            audioElement.addEventListener('ended', playNextTrack);
+            
+            // 创建音频上下文和分析器
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioContext.createAnalyser();
+            analyser.fftSize = 2048;
+            frequencyData = new Uint8Array(analyser.frequencyBinCount);
+            
+            // 连接音频节点
+            audioSource = audioContext.createMediaElementSource(audioElement);
+            audioSource.connect(analyser);
+            analyser.connect(audioContext.destination);
+            
+            // 启用开始按钮
+            document.getElementById('startBtn').disabled = false;
+        }
+
+        // 播放下一首音乐
+        function playNextTrack() {
+            currentTrackIndex = (currentTrackIndex + 1) % musicList.length;
+            audioElement.src = musicList[currentTrackIndex];
+            setBackgroundImage(currentTrackIndex);
+            audioElement.play();
+            updateTrackInfo();
+        }
+
+        // 设置事件监听器
+        function setupEventListeners() {
+            document.getElementById('startBtn').addEventListener('click', startVisualization);
+            document.getElementById('pauseBtn').addEventListener('click', pauseVisualization);
+            document.getElementById('stopBtn').addEventListener('click', stopVisualization);
+
+            window.addEventListener('resize', onWindowResize);
+            document.addEventListener('mousedown', onMouseDown);
+        }
+
+        // 开始可视化
+        function startVisualization() {
+            checkAndResumeAudioContext();
+            
+            // 粒子尚未创建，则创建粒子
+            if (!particlesCreated) {
+                createParticles();
+            }
+            
+            audioElement.play();
+            isPlaying = true;
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('pauseBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = false;
+            updateTrackInfo();
+        }
+
+        // 检查并恢复音频上下文
+        function checkAndResumeAudioContext() {
+            if (audioContext && audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+        }
+
+        // 暂停可视化
+        function pauseVisualization() {
+            if (isPlaying) {
+                audioElement.pause();
+                isPlaying = false;
+                document.getElementById('pauseBtn').innerHTML = `
+                    <svg viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z"/>
+                    </svg>
+                `;
+            } else {
+                audioElement.play();
+                isPlaying = true;
+                document.getElementById('pauseBtn').innerHTML = `
+                    <svg viewBox="0 0 24 24">
+                        <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                    </svg>
+                `;
+            }
+        }
+
+        // 停止可视化
+        function stopVisualization() {
+            audioElement.pause();
+            audioElement.currentTime = 0;
+            isPlaying = false;
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('pauseBtn').disabled = true;
+            document.getElementById('stopBtn').disabled = true;
+            document.getElementById('pauseBtn').innerHTML = `
+                <svg viewBox="0 0 24 24">
+                    <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                </svg>
+            `;
+            resetVisualization();
+            updateTrackInfo();
+        }
+
+        // 重置可视化
+        function resetVisualization() {
+            if (points && particlesCreated) {
+                const positions = points.geometry.attributes.position.array;
+                for (let i = 0; i < positions.length; i += 3) {
+                    positions[i] = (Math.random() - 0.5) * 100;
+                    positions[i + 1] = (Math.random() - 0.5) * 100;
+                    positions[i + 2] = (Math.random() - 0.5) * 100;
+                }
+                points.geometry.attributes.position.needsUpdate = true;
+            }
+        }
+
+        // 获取基于频率颜色
+        function getColorForFrequency(frequency, index, time) {
+            // HSL色彩
+            const hue = (frequency * 360 + index * 0.1 + time * 50) % 360;
+            const saturation = 0.8 + frequency * 0.2; // 饱和度变化
+            const lightness = 0.5 + frequency * 0.3; // 亮度变化
+            
+            return new THREE.Color().setHSL(hue / 360, saturation, lightness);
+        }
+
+        // 动画循环
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            if (isPlaying && particlesCreated) {
+                // 频率数据
+                analyser.getByteFrequencyData(frequencyData);
+                const positions = points.geometry.attributes.position.array;
+                const colors = points.geometry.attributes.color.array;
+                const time = Date.now() * 0.001;
+                
+                // 计算平均频率背景效果
+                const avgFrequency = frequencyData.reduce((sum, value) => sum + value, 0) / frequencyData.length;
+                
+                // 背景震动效果
+                updateBackgroundEffect(avgFrequency);
+        
+                // 粒子位置颜色
+                for (let i = 0; i < positions.length; i += 3) {
+                    const index = i / 3;
+                    const frequencyIndex = Math.floor(index / particleCount * (frequencyData.length / 2));
+                    const frequency = (frequencyData[frequencyIndex] + frequencyData[frequencyIndex + 1]) / 510;        
+                    
+                    // 贝壳形状
+                    const a = 0.1;
+                    const b = 0.1;
+                    const shellAngle = index * 0.05;
+                    const shellRadius = a * Math.exp(b * shellAngle);
+                    let x = shellRadius * Math.cos(shellAngle) * Math.sin(index * 0.1);
+                    let y = shellRadius * Math.sin(shellAngle) * Math.sin(index * 0.1);
+                    let z = shellRadius * Math.cos(index * 0.1);
+                    
+                    // 应用频率尺寸
+                    x *= 1 + frequency * intensity;
+                    y *= 1 + frequency * intensity;
+                    z *= 1 + frequency * intensity;
+        
+                    positions[i] = x;
+                    positions[i + 1] = y;
+                    positions[i + 2] = z;
+        
+                    // 更新颜色
+                    const color = getColorForFrequency(frequency, index, time);
+                    colors[i] = color.r;
+                    colors[i + 1] = color.g;
+                    colors[i + 2] = color.b;
+                }
+        
+                
+                points.geometry.attributes.position.needsUpdate = true;
+                points.geometry.attributes.color.needsUpdate = true;
+        
+                // 旋转效果
+                points.rotation.x += 0.001 * rotationSpeed;
+                points.rotation.y += 0.002 * rotationSpeed;
+            }
+        
+            // 渲染场景
+            renderer.render(scene, camera);
+            
+            // 可视化器信息
+            updateVisualizerInfo();
+        }
+
+        // 背景震动效果
+        function updateBackgroundEffect(avgFrequency) {
+            const background = document.getElementById('background');
+            const scale = 1 + (avgFrequency / 255) * 0.15; // 缩放背景
+            const opacity = 0.8 + (avgFrequency / 255) * 0.5; // 调整透明度
+            
+            // 轻微旋转效果
+            const rotation = Math.sin(Date.now() * 0.001) * (avgFrequency / 255) * 5;
+            
+            background.style.transform = `scale(${scale}) rotate(${rotation}deg)`;
+            background.style.opacity = opacity;
+        }
+
+        // 窗口大小调整
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // 鼠标拖动旋转
+        let isDragging = false;
+        let previousMousePosition = { x: 0, y: 0 };
+
+        function onMouseDown(event) {
+            if (!particlesCreated) return; 
+            
+            isDragging = true;
+            previousMousePosition = { x: event.clientX, y: event.clientY };
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        }
+
+        function onMouseMove(event) {
+            if (!isDragging || !particlesCreated) return;
+
+            const deltaMove = {
+                x: event.clientX - previousMousePosition.x,
+                y: event.clientY - previousMousePosition.y
+            };
+
+            points.rotation.y += deltaMove.x * 0.01;
+            points.rotation.x += deltaMove.y * 0.01;
+
+            previousMousePosition = { x: event.clientX, y: event.clientY };
+        }
+
+        function onMouseUp() {
+            isDragging = false;
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+        }
+
+        // 可视化器信息
+        function updateVisualizerInfo() {
+            const info = document.getElementById('visualizerInfo');
+            if (isPlaying) {
+                const avgFrequency = frequencyData.reduce((sum, value) => sum + value, 0) / frequencyData.length;
+                info.innerHTML = `平均频率: <span class="frequency">${avgFrequency.toFixed(2)}</span>`;
+            } else {
+                info.innerHTML = '可视化已暂停!';
+            }
+        }
+        
+        // 曲目信息
+        function updateTrackInfo() {
+            const info = document.getElementById('visualizerInfo');
+            const trackInfo = document.createElement('div');
+            trackInfo.className = 'track-info';
+            trackInfo.textContent = `曲目 ${currentTrackIndex + 1} / ${musicList.length}`;
+            
+            // 移除旧曲目信息
+            const oldTrackInfo = info.querySelector('.track-info');
+            if (oldTrackInfo) {
+                oldTrackInfo.remove();
+            }
+            
+            info.appendChild(trackInfo);
+        }
+
+        init();
+    </script>
+</body>
+</html>
