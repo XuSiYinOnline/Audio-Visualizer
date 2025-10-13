@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=0"/>
+    <meta name="robots" content="all">
+    <meta name="referrer" content="always">
+    <meta name="renderer" content="webkit">
+    <meta http-equiv="Cache-Control" content="no-transform" />
+    <meta name="format-detection" content="telephone=no"/>
+    <title>.:音频可视化:.</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Segoe UI',SegoeUI,'Microsoft YaHei',微软雅黑,"Helvetica Neue",Helvetica,Arial,sans-serif;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      color: white;
+      cursor: pointer;
+    }
+    
+    #background {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image: url('./images/images1.jpg');
+      background-size: cover;
+      background-position: center;
+      z-index: -1;
+      transition: transform 0.1s ease-out;
+    }
+    
+    .content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      width: 100%;
+      position: relative;
+      z-index: 2;
+    }
+    
+    .note-container {
+      position: relative;
+      width: 100px;
+      margin-bottom: 2px;
+    }
+    
+    .music-note {
+      position: absolute;
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.8);
+      opacity: 0;
+    }
+    
+    .note-1 {
+      top: 10px;
+      left: 3px;
+      animation: floatNote 5s infinite 0.5s;
+    }
+    
+    .note-2 {
+      top: 2px;
+      left: 50px;
+      font-size: 10px;
+      animation: floatNote 6s infinite 1s;
+    }
+    
+    .note-3 {
+      top: 5px;
+      left: 100px;
+      font-size: 10px;
+      animation: floatNote 7s infinite 1.5s;
+    }
+    
+    @keyframes floatNote {
+      0% {
+        transform: translateY(0) rotate(0deg);
+        opacity: 0;
+      }
+      10% {
+        opacity: 1;
+      }
+      90% {
+        opacity: 1;
+      }
+      100% {
+        transform: translateY(-100px) rotate(360deg);
+        opacity: 0;
+      }
+    }
+    
+    #startBtn {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.2);
+      backdrop-filter: blur(10px);
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+    }
+    
+    #startBtn:hover {
+      transform: scale(1.1);
+      background: rgba(255, 255, 255, 0.3);
+      box-shadow: 0 15px 30px rgba(0, 0, 0, 0.4);
+    }
+    
+    #startBtn svg {
+      width: 24px;
+      height: 24px;
+      fill: white;
+    }
+    
+    .title {
+      margin-top: 30px;
+      font-size: 24px;
+      font-weight: 300;
+      text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+    }
+    
+    .subtitle {
+      margin-top: 10px;
+      font-size: 16px;
+      font-weight: 300;
+      opacity: 0.8;
+    }
+    
+    canvas#vis {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: transparent;
+      z-index: 1;
+    }
+    
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="background"></div>
+  
+  <div class="content">
+    <div class="note-container">
+      <div class="music-note note-1">♪</div>
+      <div class="music-note note-2">♫</div>
+      <div class="music-note note-3">♩</div>
+    </div>
+    
+    <button id="startBtn" class="control-btn">
+      <svg viewBox="0 0 24 24">
+        <path d="M8 5v14l11-7z"/>
+      </svg>
+    </button>
+  </div>
+  
+  <canvas id="vis"></canvas>
+
+  <script>
+    // 初始化
+    let audioCtx, analyser, source, audio;
+    let isPlaying = false;
+
+    const canvas = document.getElementById('vis');
+    const ctx = canvas.getContext('2d');
+    const background = document.getElementById('background');
+    const startBtn = document.getElementById('startBtn');
+    const content = document.querySelector('.content');
+
+    // 音乐列表图片
+    const musicList = [
+      {
+        url: './music/music1.mp3',
+        title: '测试1',
+        bgImage: './images/images1.jpg'
+      },
+      {
+        url: './music/music2.mp3',
+        title: '测试2',
+        bgImage: './images/images2.jpg'
+      }
+    ];
+    let currentSongIndex = 0;
+
+    // 调整画布
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    function connectAudio() {
+      if (!source) {
+        try {
+          source = audioCtx.createMediaElementSource(audio);
+          const gainNode = audioCtx.createGain();
+          gainNode.gain.value = 0.195;
+          source.connect(analyser);
+          analyser.connect(gainNode);
+          gainNode.connect(audioCtx.destination);
+        } catch (e) {
+          console.error("Error creating MediaElementSource:", e);
+        }
+      }
+    }
+
+    let bufferLength, freqData, timeData;
+    
+    function setupAnalyser() {
+      analyser.fftSize = 2048;
+      bufferLength = analyser.frequencyBinCount;
+      freqData = new Uint8Array(bufferLength);
+      timeData = new Uint8Array(bufferLength);
+    }
+
+    // 背景震动
+    function shakeBackground(intensity) {
+      const shakeX = (Math.random() - 0.5) * intensity * 20;
+      const shakeY = (Math.random() - 0.5) * intensity * 20;
+      const scale = 1 + intensity * 0.2; 
+      const rotate = (Math.random() - 0.5) * intensity * 5; 
+      
+      background.style.transform = `translate(${shakeX}px, ${shakeY}px) scale(${scale}) rotate(${rotate}deg)`;
+    }
+
+    function draw() {
+      if (!isPlaying) return;
+      
+      requestAnimationFrame(draw);
+
+      analyser.getByteFrequencyData(freqData);
+      analyser.getByteTimeDomainData(timeData);
+
+      let sum = 0;
+      for (let i = 0; i < freqData.length; i++) {
+        sum += freqData[i];
+      }
+      const average = sum / freqData.length;
+      const normalizedVolume = average / 255;
+
+      shakeBackground(normalizedVolume);
+      
+      // 透明清除
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      const w = canvas.width;
+      const h = canvas.height;
+      
+      // 绘制波形
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+      ctx.shadowBlur = 15;
+      ctx.shadowColor = 'rgba(255, 255, 255, 0.5)';
+      
+      ctx.beginPath();
+      
+      const sliceWidth = w / bufferLength;
+      let x = 0;
+      const centerY = h / 2;
+      
+      for (let i = 0; i < bufferLength; i++) {
+        const v = timeData[i] / 128.0;
+        const y = centerY + (v - 1) * (h / 3);
+        
+        if (i === 0) {
+          ctx.moveTo(x, y);
+        } else {
+          ctx.lineTo(x, y);
+        }
+        
+        x += sliceWidth;
+      }
+      
+      ctx.stroke();
+      
+      // 添加渐变填充
+      ctx.lineTo(w, h);
+      ctx.lineTo(0, h);
+      ctx.closePath();
+      
+      const gradient = ctx.createLinearGradient(0, 0, 0, h);
+      gradient.addColorStop(0, 'rgba(255, 255, 255, 0.2)');
+      gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      
+      ctx.fillStyle = gradient;
+      ctx.fill();
+    }
+    
+    // 播放下一首
+    function playNextSong() {
+      currentSongIndex = (currentSongIndex + 1) % musicList.length;
+      loadAndPlaySong();
+    }
+    
+    // 加载并播放
+    function loadAndPlaySong() {
+      const currentSong = musicList[currentSongIndex];
+      
+      // 更新图片
+      background.style.backgroundImage = `url(${currentSong.bgImage})`;
+
+      audio.src = currentSong.url;
+
+      audio.play().then(() => {
+        isPlaying = true;
+        content.classList.add('hidden');
+        draw();
+      }).catch(e => {
+        console.error("播放失败:", e);
+        content.classList.remove('hidden');
+      });
+    }
+
+    function initAudioVisualizer() {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      analyser = audioCtx.createAnalyser();
+      analyser.smoothingTimeConstant = 0.8;
+
+      audio = new Audio();
+      audio.crossOrigin = "anonymous";
+
+      setupAnalyser();
+
+      connectAudio();
+      
+      // 监听音频
+      audio.addEventListener('ended', playNextSong);
+      
+      loadAndPlaySong();
+    }
+
+    // 点击或任意位置
+    startBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      initAudioVisualizer();
+    });
+    
+    document.body.addEventListener('click', function() {
+      if (!isPlaying) {
+        initAudioVisualizer();
+      }
+    });
+  </script>
+</body>
+</html>
